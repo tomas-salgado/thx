@@ -228,11 +228,29 @@ class SelfAttention(Module):
     # ------------------------------------------------------------------
 
     def _positions_from_padding(
-        self, length: int, padding_mask: Optional[jax.Array]
+        self,
+        length: int,
+        padding_mask: Optional[jax.Array],
+        segment_ids: Optional[jax.Array] = None,
     ) -> jax.Array:
-        if padding_mask is None:
-            return jnp.arange(length)
-        return jnp.maximum(jnp.cumsum(padding_mask, axis=-1) - 1, 0)
+        positions = (
+            jnp.arange(length)
+            if padding_mask is None
+            else jnp.maximum(jnp.cumsum(padding_mask, axis=-1) - 1, 0)
+        )
+        if segment_ids is None:
+            return positions
+        # Restart at each document: subtract the position where its segment began.
+        positions = jnp.broadcast_to(positions, segment_ids.shape)
+        starts = jnp.concatenate(
+            [
+                jnp.ones_like(segment_ids[:, :1], dtype=jnp.bool_),
+                segment_ids[:, 1:] != segment_ids[:, :-1],
+            ],
+            axis=-1,
+        )
+        origin = jax.lax.cummax(jnp.where(starts, positions, 0), axis=1)
+        return positions - origin
 
     def _cached_positions(self, length: int, cache_index: jax.Array) -> jax.Array:
         positions = jnp.arange(length) + cache_index
@@ -265,15 +283,20 @@ class SelfAttention(Module):
                 pad: jax.Array = self.get_variable("cache", "cached_padding_mask")
                 mask = mask & pad[:, None, None, :]  # (B, 1, 1, T_kv)
             return mask
+        segment_ids: Optional[jax.Array] = kwargs.get("segment_ids")
+        if padding_mask is None and segment_ids is None:
+            return None
+        # Block future tokens, padding keys, and keys from other documents.
+        mask = jnp.tril(jnp.ones((t, t), dtype=jnp.bool_))[
+            None, None, :, :
+        ]  # (1, 1, T, T)
         if padding_mask is not None:
-            # Combine causal mask with padding mask so future tokens AND
-            # padding tokens are both blocked.
-            causal = jnp.tril(jnp.ones((t, t), dtype=jnp.bool_))[
-                None, None, :, :
-            ]  # (1, 1, T, T)
-            pad = padding_mask[:, None, None, :]  # (B, 1, 1, T)
-            return causal & pad
-        return None
+            mask = mask & padding_mask[:, None, None, :]  # (B, 1, 1, T)
+        if segment_ids is not None:
+            mask = mask & (
+                segment_ids[:, None, :, None] == segment_ids[:, None, None, :]
+            )  # (B, 1, T, T)
+        return mask
 
     def attn(
         self,
@@ -354,7 +377,9 @@ class SelfAttention(Module):
         elif "positions" not in kwargs:
             kwargs = {
                 **kwargs,
-                "positions": self._positions_from_padding(T, padding_mask),
+                "positions": self._positions_from_padding(
+                    T, padding_mask, kwargs.get("segment_ids")
+                ),
             }
 
         q, k, v = self.preprocess_qkv(q, k, v, **kwargs)

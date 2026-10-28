@@ -27,6 +27,8 @@ class Thoughtbubbles(GPT):
     """
 
     FORK_BLOCK: ClassVar[type[ForkingBlock]] = ForkingBlock
+    # Forked tokens have no single document, so segment_ids are rejected.
+    DOCUMENT_MASKING: ClassVar[bool] = False
 
     max_block_size: int = field("architecture/max_block_size", default=1024)
     fork: List[int] = field(
@@ -111,12 +113,15 @@ class Thoughtbubbles(GPT):
         x: jax.Array,
         padding_mask: Optional[jax.Array] = None,
         deterministic: bool = False,
+        segment_ids: Optional[jax.Array] = None,
         **kwargs: Any,
     ) -> Any:
         """
         Process through transformer blocks with forking.
         Overrides GPT.decode to handle forking state.
         """
+        if segment_ids is not None:
+            raise NotImplementedError("Thoughtbubbles does not support segment_ids")
         cumulative_scores: jax.Array = kwargs["cumulative_scores"]
         token_index: jax.Array = kwargs["token_index"]
         input_seq_len: Optional[int] = kwargs.get("input_seq_len")
@@ -189,6 +194,7 @@ class Thoughtbubbles(GPT):
         targets: Optional[jax.Array] = None,
         padding_mask: Optional[jax.Array] = None,
         deterministic: bool = False,
+        segment_ids: Optional[jax.Array] = None,
         **kwargs: Any,
     ) -> Tuple[jax.Array, Optional[jax.Array]]:
         """
@@ -222,6 +228,7 @@ class Thoughtbubbles(GPT):
             cumulative_scores=cumulative_scores,
             token_index=token_index,
             input_seq_len=t,
+            segment_ids=segment_ids,
             **kwargs,
         )
 

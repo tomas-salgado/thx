@@ -31,9 +31,12 @@ class DatasetConfig:
     Attributes:
         suffix: Optional suffix appended to the registered dataset key when
             locating the materialized directory.
+        document_masking: Emit per-window ``segment_ids`` from PMD streams so
+            attention and positions restart at each ``<eos>``-terminated document.
     """
 
     suffix: str = field("data/suffix", default="")
+    document_masking: bool = field("data/document_masking", default=False)
 
 
 class DatasetComponent:

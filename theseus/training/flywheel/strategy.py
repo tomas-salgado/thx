@@ -7,6 +7,7 @@ from theseus.base.job import ExecutionSpec
 from theseus.config import configure
 from theseus.data.datasets import DatasetComponent, DatasetConfig
 from theseus.data.style import DatasetStyle, DatasetStyleLike
+from theseus.data.tokenizer import get_tokenizer
 from .dataset import Dataset
 from .stream import batches
 from theseus.base import Node
@@ -60,7 +61,13 @@ class Strategy:
         # Create dataset objects
         self.datasets: list[Dataset] = []
         styles_lower: list[str] = []
-        suffix = configure(DatasetConfig).suffix
+        dataset_config = configure(DatasetConfig)
+        suffix = dataset_config.suffix
+        # Streams are tokenized with the configured tokenizer, which marks
+        # document ends with its eot token.
+        eot_token = (
+            get_tokenizer().eot_token if dataset_config.document_masking else None
+        )
         for sampling in mixture:
             ds: Dataset
             declared_style = (
@@ -75,6 +82,11 @@ class Strategy:
                 )
             style = DatasetStyle.normalize(declared_style)
             styles_lower.append(style.value)
+            if eot_token is not None and style != DatasetStyle.PMD:
+                raise ValueError(
+                    f"data/document_masking supports only PMD datasets; "
+                    f"{sampling.dataset.__name__} uses {style.value}"
+                )
 
             if style == DatasetStyle.PADDED:
                 from theseus.training.flywheel.padded import PaddedDataset
@@ -94,7 +106,7 @@ class Strategy:
                 from theseus.training.flywheel.pmd import MemmapDataset
 
                 ds = MemmapDataset(
-                    spec, block_size, sampling.dataset.DATASET_KEY, suffix
+                    spec, block_size, sampling.dataset.DATASET_KEY, suffix, eot_token
                 )
             self.datasets.append(ds)
 

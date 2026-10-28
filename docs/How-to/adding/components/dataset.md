@@ -128,6 +128,12 @@ module. Rates must sum to one. Use `"padded"` for materialized chat data and
 `"pmd"` for contiguous pretraining tokens. Source options belong to a dataset's
 `CONFIG` schema; see [Adding an experiment](experiment.md).
 
+PMD windows pack several `<eos>`-terminated documents together. Set
+`data.document_masking: true` to keep them apart: each batch then carries
+`segment_ids`, and attention and RoPE positions restart at every document. It
+needs an all-PMD mixture and a model whose `__call__` accepts `segment_ids`
+(currently `GPT`); other models stop at startup rather than mask silently.
+
 ## Materialize before training
 
 Declare `DATASET = MyCorpus` on a `TokenizeVariableDatasetJob` subclass for

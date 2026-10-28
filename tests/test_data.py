@@ -151,7 +151,9 @@ def test_sampling_infers_dataset_reader(
     with configuration(build(DatasetConfig)):
         strategy = Strategy(spec, 8, [sampling])
 
-    reader.assert_called_once_with(spec, 8, "local", "")
+    # PMD readers also receive the eot token, None while document masking is off.
+    pmd_args = (None,) if reader_name == "MemmapDataset" else ()
+    reader.assert_called_once_with(spec, 8, "local", "", *pmd_args)
     assert strategy.datasets == [reader.return_value]
 
 

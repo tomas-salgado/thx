@@ -1,8 +1,8 @@
 # Sharp Edges
 theseus has a lot of sharp edges which generally boils down to "what Jack thought was useful is implemented, everything else that doesn't matter is ignored." but I realize a lot of these is not clear.
 
-## The `PMD` dataloader do not do document masking.
-Yup, that's right. I'm sorry. You can implement it, but I don't. But we do append `<eos>` tokens though. If you implement this you can do a PR.
+## `PMD` document masking is opt-in and GPT-only.
+Set `data.document_masking: true` and packed documents stop attending to each other, with RoPE positions restarting after every `<eos>`. It's off by default so existing runs replay identically. Only `GPT` accepts `segment_ids` so far; the grouped-attention models (Llama, Qwen, NeoX, Marin), Qwen 3.5's Gated DeltaNet, and Thoughtbubbles refuse to start with it on.
 
 ## MoEs use naive shuffles.
 I'll fix this eventually, but right now if you look at how the residuals are permuted for MoEs the answer is grossly and I'm sorry. I'm afraid of Pallas but I'll grow up soon.

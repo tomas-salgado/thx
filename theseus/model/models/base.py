@@ -2,7 +2,7 @@ import jax
 import flax.linen as nn
 import jax.numpy as jnp
 
-from typing import Optional, Tuple, List, Any, Type
+from typing import Optional, Tuple, List, Any, Type, ClassVar
 
 from theseus.model.block import Block
 from theseus.model.layers import LayerNorm
@@ -15,6 +15,9 @@ from theseus.base.axis import Axis
 
 
 class GPT(Module):
+    # Honors segment_ids end to end; BaseTrainer requires this for document masking.
+    DOCUMENT_MASKING: ClassVar[bool] = True
+
     n_layers: int = field("architecture/n_layers", default=32)
     n_embd: int = field("architecture/n_embd", default=2048)
     rope: bool = field("architecture/rope", default=True)
@@ -108,13 +111,19 @@ class GPT(Module):
         x: jax.Array,
         padding_mask: Optional[jax.Array] = None,
         deterministic: bool = False,
+        segment_ids: Optional[jax.Array] = None,
         **kwargs: Any,
     ) -> Any:
         """Compute decoded residual channels given embeddings."""
 
         for layer, block in enumerate(self.blocks):
             residual = x
-            x = block(x, padding_mask=padding_mask, deterministic=deterministic)
+            x = block(
+                x,
+                padding_mask=padding_mask,
+                deterministic=deterministic,
+                segment_ids=segment_ids,
+            )
             self.measure(x, residual, layer, padding_mask)
         return x
 
@@ -203,6 +212,7 @@ class GPT(Module):
         targets: Optional[jax.Array] = None,
         padding_mask: Optional[jax.Array] = None,
         deterministic: bool = False,
+        segment_ids: Optional[jax.Array] = None,
         **kwargs: Any,
     ) -> Tuple[jax.Array, Optional[jax.Array]]:
         """
@@ -212,6 +222,8 @@ class GPT(Module):
             padding_mask: Boolean tensor of shape (B, T). True for valid tokens,
                 False for padding tokens.
             deterministic: If False, applies dropout.
+            segment_ids: Integer tensor of shape (B, T) numbering the documents
+                packed into each row; tokens attend only within their document.
 
         Returns:
             logits: Output logits of shape (B, T, vocab_size).
@@ -227,7 +239,11 @@ class GPT(Module):
 
         # Transformer blocks
         x = self.decode(
-            x, padding_mask=padding_mask, deterministic=deterministic, **kwargs
+            x,
+            padding_mask=padding_mask,
+            deterministic=deterministic,
+            segment_ids=segment_ids,
+            **kwargs,
         )
 
         # Final layer norm and logits

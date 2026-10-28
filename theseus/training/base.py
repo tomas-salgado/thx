@@ -41,7 +41,7 @@ from theseus.base import ExecutionSpec, Node
 from theseus.base.axis import ParameterShardingContext
 from theseus.job import BasicJob, CometLoggingJob, RestoreableJob
 from theseus.config import field, configure, configuration, current_config
-from theseus.data.datasets import DatasetComponent
+from theseus.data.datasets import DatasetComponent, DatasetConfig
 
 from theseus.model.module import Module
 from theseus.model.debug import Debugger
@@ -290,6 +290,15 @@ class BaseTrainer(RestoreableJob[C], CometLoggingJob[C], Generic[C, M]):
 
     def _init_data(self, spec: ExecutionSpec) -> None:
         """Initialize dataset strategy and data loaders."""
+        # Models opt into document masking explicitly; others would silently
+        # attend across documents.
+        if configure(DatasetConfig).document_masking and not getattr(
+            self.MODEL, "DOCUMENT_MASKING", False
+        ):
+            raise ValueError(
+                f"{self.MODEL.__name__} does not support data/document_masking"
+            )
+
         # make dataset strategy
         self.strategy = Strategy(
             spec,
@@ -623,6 +632,12 @@ class BaseTrainer(RestoreableJob[C], CometLoggingJob[C], Generic[C, M]):
         x = batch_dict["x"]
         y = batch_dict["y"]
         padding_mask = batch_dict["padding_mask"]
+        # Present only under data/document_masking, which _init_data gates on models.
+        segments = (
+            {"segment_ids": batch_dict["segment_ids"]}
+            if "segment_ids" in batch_dict
+            else {}
+        )
 
         if hasattr(state, "merge_params"):
             params = state.merge_params(params)
@@ -644,6 +659,7 @@ class BaseTrainer(RestoreableJob[C], CometLoggingJob[C], Generic[C, M]):
             deterministic=deterministic,
             rngs=rngs,
             mutable=mutable,
+            **segments,
         )
         meta: Dict[str, Any] = scalar_metadata(mutated.get("scalars", {}))
         if intermediates:

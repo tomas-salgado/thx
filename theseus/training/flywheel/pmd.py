@@ -20,11 +20,21 @@ BUFFER_BLOCKS = 64  # Number of blocks to buffer (256MB total, ~64M tokens)
 
 class MemmapDataset(Dataset):
     def __init__(
-        self, spec: ExecutionSpec, block_size: int, name: str, suffix: str = ""
+        self,
+        spec: ExecutionSpec,
+        block_size: int,
+        name: str,
+        suffix: str = "",
+        eot_token: Optional[int] = None,
     ):
+        """Args:
+        eot_token: When set, rows also carry ``segment_ids`` that advance after
+            each ``eot_token`` so documents packed into one window stay separate.
+        """
         self.cache_train: Optional[np.memmap] = None
         self.cache_val: Optional[np.memmap] = None
         self.block_size = block_size
+        self.eot_token = eot_token
         self.process_index = jax.process_index()
         self.process_count = max(1, jax.process_count())
 
@@ -159,4 +169,9 @@ class MemmapDataset(Dataset):
             samples = windows[ix[slots] - start]
             x[slots] = samples[:, :-1]
             y[slots] = samples[:, 1:]
-        return {"x": x, "y": y, "padding_mask": np.ones_like(x, dtype=np.bool_)}
+        batch = {"x": x, "y": y, "padding_mask": np.ones_like(x, dtype=np.bool_)}
+        if self.eot_token is not None:
+            # An <eos> closes its own document; the next token opens a new one.
+            ends = x == self.eot_token
+            batch["segment_ids"] = (np.cumsum(ends, axis=1) - ends).astype(np.int32)
+        return batch

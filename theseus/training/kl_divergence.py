@@ -227,6 +227,12 @@ class KLDivergenceTrainer(BaseTrainer[C, M], Generic[C, M]):
         x = batch_dict["x"]
         y = batch_dict["y"]
         padding_mask = batch_dict["padding_mask"]
+        # Present only under data/document_masking, which _init_data gates on models.
+        segments = (
+            {"segment_ids": batch_dict["segment_ids"]}
+            if "segment_ids" in batch_dict
+            else {}
+        )
 
         dropout_key = None
         if not deterministic and key is not None:
@@ -246,6 +252,7 @@ class KLDivergenceTrainer(BaseTrainer[C, M], Generic[C, M]):
             deterministic=deterministic,
             rngs=rngs,
             mutable=mutable,
+            **segments,
         )
         meta: Dict[str, Any] = scalar_metadata(mutated.get("scalars", {}))
         if intermediates:
@@ -268,6 +275,7 @@ class KLDivergenceTrainer(BaseTrainer[C, M], Generic[C, M]):
                 y,
                 padding_mask=padding_mask,
                 deterministic=True,
+                **segments,
             )[1]
         )
 
